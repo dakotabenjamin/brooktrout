@@ -58,9 +58,6 @@ points@data <- droplevels(points@data)
 
 # Random Forest Training ----
 
-#ydata <- points@data$com
-#xdata <- points@data[,2:ncol(points@data)]
-
 # set the seed
 set.seed(23461)
 train.rf <- randomForest(com ~ ., data=points@data, importance=T, ntree=1500, do.trace=100, proximity=T, na.action=na.exclude) # apply the proper mtry and ntree
