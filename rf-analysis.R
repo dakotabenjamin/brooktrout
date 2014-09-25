@@ -20,38 +20,46 @@ library(raster)
 
 # Load the basic terrain analyses
 #catchment <- raster("tifs/repr/catchment.tif")
-tpi2k <- raster("tifs/repr/tpi2k.tif")
-tpi200 <- raster("tifs/repr/tpi200.tif")
-aspect <- raster("tifs/repr/aspect.tif")
-channel_altitude <- raster("tifs/repr/channel_altitude.tif")
-channel_base <- raster("tifs/repr/channel_base.tif")
-convergence <- raster("tifs/repr/convergence.tif")
-hcurv <- raster("tifs/repr/hcurv.tif")
-vcurv <- raster("tifs/repr/vcurv.tif")
-# There is something wrong with ls-factor ls_factor <- raster("tifs/repr/ls_factor.tif")
-relative_slope_position <- raster("tifs/repr/relative_slope_position.tif")
-shade <- raster("tifs/repr/shade.tif")
-#sinks <- raster("tifs/repr/sinks.tif")
-slope <- raster("tifs/repr/slope.tif")
-twi <- raster("tifs/repr/twi.tif")
-valley_depth <- raster("tifs/repr/valley_depth.tif")
-historicalforest <- raster("tifs/repr/historicalforest.tif")
+tpi2k <- raster("Predictors/tpi2k.tif")
+tpi200 <- raster("Predictors/tpi200.tif")
+aspect <- raster("Predictors/aspect.tif")
+channel_altitude <- raster("Predictors/channel_altitude.tif")
+channel_base <- raster("Predictors/channel_base.tif")
+convergence <- raster("Predictors/convergence.tif")
+hcurv <- raster("Predictors/hcurv.tif")
+vcurv <- raster("Predictors/vcurv.tif")
+# There is something wrong with ls-factor ls_factor <- raster("Predictors/ls_factor.tif")
+relative_slope_position <- raster("Predictors/relative_slope_position.tif")
+shade <- raster("Predictors/shade.tif")
+#sinks <- raster("Predictors/sinks.tif")
+slope <- raster("Predictors/slope.tif")
+twi <- raster("Predictors/twi.tif")
+valley_depth <- raster("Predictors/valley_depth.tif")
+historicalforest <- raster("Predictors/historicalforest.tif")
 
 predictors <- addLayer(tpi2k, tpi200, aspect, channel_altitude, channel_base, convergence, hcurv, vcurv, relative_slope_position, shade, slope, valley_depth, twi)
 
-# make historicalforest the same extent
-#e<- extent(predictors)
-#historicalforest <- crop(historicalforest, e)
-#historicalforest <- resample(historicalforest, predictors)
-
 predictors <- addLayer(predictors, historicalforest)
 
-#read in the training points
-points <- readOGR("data", "classes_all")
+#Training Data -----
+conn<-odbcConnectAccess("C:\\Users\\Dakota\\Dropbox\\_CASE\\_SENIOR\\Brook Trout\\388_Fall2008\\fwdbrooktroutdata\\Brook Trout HSI 12-5-2006.mdb")
+train.tables <- sqlTables(conn)
+#info on streams, lat/long, etc.
+train.streams <- sqlFetch(conn,"tblStreamDetail")
+#Habitat- depth types, substrate
+train.habitat <- sqlFetch(conn,"tblHabitat")
+#Temperature- all, i think. 
+train.temps <- sqlFetch(conn,"tblTemperature")
+#Chemical data
+train.chem <- sqlFetch(conn,"tblChemical")
+
+#Change train.stream lat/long to State Plane
+
+#Add to the train.streams table the average temps, etc.
 
 #extract raster values for the points
-pred <- raster::extract(predictors_masked, points)
-points@data = data.frame(points@data, pred)
+ras <- raster::extract(predictors, c(train.streams$Latitude, train.streams$Longitude))
+points@data = data.frame(points@data, ras)
 points@data <- na.omit(points@data)
 #points <- subset(points, tpi2k != NA)
 points@data <- droplevels(points@data)
