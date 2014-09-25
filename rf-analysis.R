@@ -9,12 +9,14 @@
 
 # Initialization ----
 rm(list=ls())
+setwd("../brooktrout")
 
 #Libraries
 library(randomForest) #for the random forest
 library(sp) #Classes and methods for spatial data
 library(rgdal) #bindings for GDAL
 library(raster)
+library(RODBC)
 
 # Load data ----
 
@@ -42,7 +44,7 @@ predictors <- addLayer(tpi2k, tpi200, aspect, channel_altitude, channel_base, co
 predictors <- addLayer(predictors, historicalforest)
 
 #Training Data -----
-conn<-odbcConnectAccess("C:\\Users\\Dakota\\Dropbox\\_CASE\\_SENIOR\\Brook Trout\\388_Fall2008\\fwdbrooktroutdata\\Brook Trout HSI 12-5-2006.mdb")
+conn<-odbcConnectAccess("oldfield\\388_Fall2008\\fwdbrooktroutdata\\Brook Trout HSI 12-5-2006.mdb")
 train.tables <- sqlTables(conn)
 #info on streams, lat/long, etc.
 train.streams <- sqlFetch(conn,"tblStreamDetail")
@@ -54,33 +56,38 @@ train.temps <- sqlFetch(conn,"tblTemperature")
 train.chem <- sqlFetch(conn,"tblChemical")
 
 #Change train.stream lat/long to State Plane
+coordinates(train.streams) <- c("Longitude", "Latitude")
+proj4string(train.streams) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84")
+train.streams <- spTransform(train.streams, CRS("+proj=lcc +lat_1=41.7 +lat_2=40.43333333333333 +lat_0=39.66666666666666 +lon_0=-82.5 +x_0=600000 +y_0=0 +ellps=GRS80 +datum=NAD83 +to_meter=0.3048006096012192 +no_defs"))
 
 #Add to the train.streams table the average temps, etc.
 
 #extract raster values for the points
-ras <- raster::extract(predictors, c(train.streams$Latitude, train.streams$Longitude))
-points@data = data.frame(points@data, ras)
-points@data <- na.omit(points@data)
-#points <- subset(points, tpi2k != NA)
-points@data <- droplevels(points@data)
+#ras <- raster::extract(predictors, c(train.streams$Latitude, train.streams$Longitude))
+#train.streams@data = data.frame(train.streams, ras)
+#train.streams <- na.omit(points@data)
+
+#TODO: Geauga county DEM analysis
+
+#Put all the data together
 
 # Random Forest Training ----
 
 # set the seed
-set.seed(23461)
-train.rf <- randomForest(com ~ ., data=points@data, importance=T, ntree=1500, do.trace=100, proximity=T, na.action=na.exclude) # apply the proper mtry and ntree
+set.seed(2341)
+train.rf <- randomForest(outlook ~ ., data=train.streams@data, importance=T, ntree=1500, do.trace=100, proximity=T, na.action=na.exclude) # apply the proper mtry and ntree
 
 print(train.rf)
 # Variable Importance
-par(mfrow=c(4,4))
-for (i in 1:14) {
+par(mfrow=c(5,1))
+for (i in 1:5) {
   barplot(sort(train.rf$importance[,i], dec=T),
           main=attributes(train.rf$importance)$dimnames[[2]][i], cex.names=0.6)
 }
 
 #Look at just Mean Decrease in Accuracy:
 par(mfrow=c(1,1))
-barplot(sort(train.rf$importance[,13], dec=T),main="Mean Decrease in Accuracy", cex.names=0.6)
+barplot(sort(train.rf$importance[,4], dec=T),main="Mean Decrease in Accuracy", cex.names=0.6)
 
 #Outliers
 outlier <- outlier(train.rf)
@@ -88,31 +95,9 @@ par(mfcol=c(1,1))
 plot(outlier, type="h", main="Outlier data points in the RF")
 
 
-# Predict classification and write it to a raster ----
+# Predict classification for other streams ----
 
-rpath=paste('~/Documents/GitHub/randomForest', "tifs/repr", sep="/")
-xvars <- stack(paste(rpath, paste(rownames(train.rf$importance), "tif", sep="."), sep="/"))
-# #not working right now ----
-# 
-#  tr <-  blockSize(predictors, n=15, minrows=127)
-# s <- raster(predictors[[1]])
-# s <- writeStart(s, filename=paste('~/GitHub/randomForest', "prob_landcover.tif", sep="/"), overwrite=TRUE)
-# # 
-#  for (i in 1:tr$n) {
-#   v <- getValuesBlock(predictors, row=tr$row[i], nrows=tr$nrows[i])
-#   v <- as.data.frame(v)
-#   rf.pred <- predict(train.rf,v, type='response')
-# #  rf.pred1 <- predict(train.rf,v, type='prob')
-#   writeValues(s, as.numeric(rf.pred), tr$row[i])
-#   cat(" Finished Block", i, ". . .", sep=" ")
-#  }
-# s <- writeStop(s)
+#Load Streams
 
-# # try on a subset
-# e<- extent(2209444,2222142,596814,606393)
-# cropped<- crop(xvars, e)
-
-beginCluster()
 rf.pred <- clusterR(xvars, predict, args=list(model=train.rf), progress='text')
-writeRaster(rf.pred, filename = "rasterout1.tif", datatype='GTiff')
-endCluster()
+
