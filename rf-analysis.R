@@ -42,13 +42,13 @@ library(RODBC)
 
 #Soils
 # need soils for both counties first. 
-soils.cuy <- readOGR("Predictors//soils//cuy//spatial//", "soilmu_a_oh035")
-soils.gea <- readOGR("Predictors//soils//geauga//spatial//", "soilmu_a_oh055")
+soils <- readOGR("Predictors/soils/merge/", "soilmu_a_merged")
 
 #Sandstone
 sandstone <- readOGR("Predictors//geology//PennsylvanianShape//Maps//", "ohbedpm-s")
 sandstone <- subset(sandstone, AQUA= "Pm-s")
-crs(sandstone) <- "+proj=lcc +lat_1=40.03333333333333 +lat_2=38.73333333333333 +lat_0=38 +lon_0=-82.5 +x_0=600000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs "
+#crs(sandstone) <- "+proj=lcc +lat_1=40.03333333333333 +lat_2=38.73333333333333 +lat_0=38 +lon_0=-82.5 +x_0=600000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs "
+crs(sandstone) <- "+proj=lcc +lat_1=38.73333333333333 +lat_2=40.03333333333333 +lat_0=38 +lon_0=-82.5 +x_0=609601.2192024384 +y_0=0 +ellps=clrk66 +datum=NAD27 +to_meter=0.3048006096012192 +no_defs "
 
 #DEM for now, need twi next
 dem <- raster("cuy_gea_dem.tif")
@@ -88,13 +88,30 @@ points.sand <- as.vector(over(x=train.streams, y=sandstone)$AQUA)
 points.sand[is.na(points.sand)] <- "na"
 
 # soils
-#gea
-#sptransform
-soils.gea <- spTransform(soils.gea, CRS("+proj=lcc +lat_1=41.7 +lat_2=40.43333333333333 +lat_0=39.66666666666666 +lon_0=-82.5 +x_0=600000 +y_0=0 +ellps=GRS80 +datum=NAD83 +to_meter=0.3048006096012192 +no_defs +towgs84=0,0,0"))
-points.soils.gea <- over(x=train.streams, y=soils.gea)
+# #gea
+# #sptransform
+# soils.gea <- spTransform(soils.gea, CRS("+proj=lcc +lat_1=41.7 +lat_2=40.43333333333333 +lat_0=39.66666666666666 +lon_0=-82.5 +x_0=600000 +y_0=0 +ellps=GRS80 +datum=NAD83 +to_meter=0.3048006096012192 +no_defs +towgs84=0,0,0"))
+# points.soils.gea <- over(x=train.streams, y=soils.gea)
+# 
+# #cuy
+# soils.cuy <- spTransform(soils.cuy, CRS("+proj=lcc +lat_1=41.7 +lat_2=40.43333333333333 +lat_0=39.66666666666666 +lon_0=-82.5 +x_0=600000 +y_0=0 +ellps=GRS80 +datum=NAD83 +to_meter=0.3048006096012192 +no_defs +towgs84=0,0,0"))
+# 
+# #lake
+# soils.lake <- spTransform(soils.lake, CRS("+proj=lcc +lat_1=41.7 +lat_2=40.43333333333333 +lat_0=39.66666666666666 +lon_0=-82.5 +x_0=600000 +y_0=0 +ellps=GRS80 +datum=NAD83 +to_meter=0.3048006096012192 +no_defs +towgs84=0,0,0"))
+# points.soils.lake <- over(x=train.streams, y=soils.lake)
+# 
+# #merge the two tables where there are no NAs
+# for(i in points.soils.gea) {
+#   if (is.na(i)) {
+#     points.soils.up <- points.soils.lake[as.integer(rownames(i))]
+#   }
+# }
+
+soils <- spTransform(soils, CRS("+proj=lcc +lat_1=41.7 +lat_2=40.43333333333333 +lat_0=39.66666666666666 +lon_0=-82.5 +x_0=600000 +y_0=0 +ellps=GRS80 +datum=NAD83 +to_meter=0.3048006096012192 +no_defs +towgs84=0,0,0"))
+points.soils <- as.vector(over(x=train.streams, y=soils))
 
 #all together now
-train.streams@data <- data.frame(train.streams, points.sand, points.soils.cuy$MUSYM)
+train.streams@data <- data.frame(train.streams, points.sand, points.soils$MUSYM)
 
 
 # Prediction Streams -----
@@ -105,16 +122,16 @@ train.streams@data <- data.frame(train.streams, points.sand, points.soils.cuy$MU
 
 # Random Forest Training ----
 
-training <- data.frame(train.streams$bkt.Outlook, train.streams$ras, train.streams$points.sand.1)
-names(training) <- c("outlook", "dem", "sandstone")
+training <- data.frame(train.streams$bkt.Outlook, train.streams$ras, train.streams$points.sand, as.character(train.streams$points.soils.MUSYM))
+names(training) <- c("outlook", "dem", "sandstone", "soils")
 
 # set the seed
-set.seed(2341)
+set.seed(241)
 train.rf <- randomForest(outlook ~ ., data=training, importance=T, ntree=1500, do.trace=100, proximity=T, na.action=na.exclude) # apply the proper mtry and ntree
 print(train.rf)
 # Variable Importance
-par(mfrow=c(5,1))
-for (i in 1:5) {
+par(mfrow=c(1,4))
+for (i in 1:4) {
   barplot(sort(train.rf$importance[,i], dec=T),
           main=attributes(train.rf$importance)$dimnames[[2]][i], cex.names=0.6)
 }
@@ -132,6 +149,9 @@ plot(outlier, type="h", main="Outlier data points in the RF")
 # Predict classification for other streams ----
 
 #Load Streams
+cm.streams <- readOGR("streams/", "headwater_points")
+
+
 
 rf.pred <- clusterR(xvars, predict, args=list(model=train.rf), progress='text')
 
